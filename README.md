@@ -9,6 +9,7 @@ This folder contains optional local changes for `~/.config/quickshell/end4-pC`.
 | Peripheral battery indicator | `end4-peripheral-battery.patch` |
 | G84 profile toggle | `g84-profile-toggle.patch` |
 | Compact Codex usage indicator | `codex-usage.patch` |
+| MPRIS Base64-encoded artwork in media controls | `mpris-vol.patch` |
 
 ## Use A Patch
 

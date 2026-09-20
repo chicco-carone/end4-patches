@@ -1,0 +1,5 @@
+modules/common/widgets/Player.qml:tempDataFilePath
+modules/ii/background/widgets/media/MediaWidget.qml:tempDataFilePath
+modules/ii/bar/Media.qml:tempDataFilePath
+modules/ii/dock/DockMedia.qml:tempDataFilePath
+modules/ii/sidebarLeft/SidebarPlayerControl.qml:tempDataFilePath

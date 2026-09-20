@@ -1,0 +1,250 @@
+diff --git a/modules/common/widgets/Player.qml b/modules/common/widgets/Player.qml
+index 55618e9..3290c12 100644
+--- a/modules/common/widgets/Player.qml
++++ b/modules/common/widgets/Player.qml
+@@ -29,6 +29,7 @@ Item {
+     property int visualizerSmoothing: 2
+     property real radius
+     property bool showLyrics: Config.options.bar.media.showLyrics
++    property string tempDataFilePath: `${artDownloadLocation}/.temp_b64_data`
+ 
+     property string displayedArtFilePath: {
+         if (!root.downloaded) return ""
+@@ -61,15 +62,29 @@ Item {
+ 
+         coverArtDownloader.targetFile = root.artUrl
+         coverArtDownloader.artFilePath = root.artFilePath
++        if (root.artUrl.startsWith("data:")) {
++            dataUriWriter.setText(root.artUrl)
++        }
+         root.downloaded = false
+         coverArtDownloader.running = true
+     }
+ 
++    FileView {
++        id: dataUriWriter
++        path: Qt.resolvedUrl(root.tempDataFilePath)
++        blockWrites: true
++    }
++
+     Process {
+         id: coverArtDownloader
+         property string targetFile: root.artUrl
+         property string artFilePath: root.artFilePath
+-        command: ["bash", "-c", `[ -f ${artFilePath} ] || curl -4 -sSL '${targetFile}' -o '${artFilePath}'`]
++        property bool isDataUri: targetFile?.startsWith("data:") ?? false
++        command: ["bash", "-c",
++            isDataUri
++                ? `cut -d',' -f2 '${root.tempDataFilePath}' | base64 -d > '${artFilePath}'`
++                : `[ -f ${artFilePath} ] || curl -4 -sSL '${targetFile}' -o '${artFilePath}'`
++        ]
+         onExited: (exitCode, exitStatus) => {
+             root.downloaded = true
+         }
+diff --git a/modules/ii/background/widgets/media/MediaWidget.qml b/modules/ii/background/widgets/media/MediaWidget.qml
+index 66410c6..21858c5 100644
+--- a/modules/ii/background/widgets/media/MediaWidget.qml
++++ b/modules/ii/background/widgets/media/MediaWidget.qml
+@@ -94,6 +94,7 @@ AbstractBackgroundWidget {
+ 
+     property bool downloaded: false
+     property bool showLyrics: false
++    property string tempDataFilePath: `${artDownloadLocation}/.temp_b64_data`
+ 
+     property string displayedArtFilePath: {
+         if (!root.downloaded) return ""
+@@ -117,15 +118,29 @@ AbstractBackgroundWidget {
+         }
+         coverArtDownloader.targetFile = root.artUrl
+         coverArtDownloader.artFilePath = root.artFilePath
++        if (root.artUrl.startsWith("data:")) {
++            dataUriWriter.setText(root.artUrl)
++        }
+         root.downloaded = false
+         coverArtDownloader.running = true
+     }
+ 
++    FileView {
++        id: dataUriWriter
++        path: Qt.resolvedUrl(root.tempDataFilePath)
++        blockWrites: true
++    }
++
+     Process {
+         id: coverArtDownloader
+         property string targetFile: root.artUrl
+         property string artFilePath: root.artFilePath
+-        command: ["bash", "-c", `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`]
++        property bool isDataUri: targetFile?.startsWith("data:") ?? false
++        command: ["bash", "-c",
++            isDataUri
++                ? `cut -d',' -f2 '${root.tempDataFilePath}' | base64 -d > '${artFilePath}'`
++                : `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`
++        ]
+         onExited: { root.downloaded = true }
+     }
+ 
+diff --git a/modules/ii/bar/Media.qml b/modules/ii/bar/Media.qml
+index f1ed52c..afeca80 100644
+--- a/modules/ii/bar/Media.qml
++++ b/modules/ii/bar/Media.qml
+@@ -43,6 +43,7 @@ Item {
+     property string artFileName:         Qt.md5(artUrl)
+     property string artFilePath:         `${artDownloadLocation}/${artFileName}`
+     property bool   artDownloaded:       false
++    property string tempDataFilePath:    `${artDownloadLocation}/.temp_b64_data`
+ 
+     property string displayedArtFilePath: {
+         if (!root.artDownloaded) return ""
+@@ -61,16 +62,29 @@ Item {
+         }
+         artDownloader.targetFile  = root.artUrl
+         artDownloader.artFilePath = root.artFilePath
++        if (root.artUrl.startsWith("data:")) {
++            dataUriWriter.setText(root.artUrl)
++        }
+         root.artDownloaded = false
+         artDownloader.running = true
+     }
+ 
++    FileView {
++        id: dataUriWriter
++        path: Qt.resolvedUrl(root.tempDataFilePath)
++        blockWrites: true
++    }
++
+     Process {
+         id: artDownloader
+         property string targetFile:  root.artUrl
+         property string artFilePath: root.artFilePath
++        property bool isDataUri: targetFile?.startsWith("data:") ?? false
+         command: ["bash", "-c",
+-            `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`]
++            isDataUri
++                ? `cut -d',' -f2 '${root.tempDataFilePath}' | base64 -d > '${artFilePath}'`
++                : `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`
++        ]
+         onExited: { root.artDownloaded = true }
+     }
+ 
+diff --git a/modules/ii/dock/DockMedia.qml b/modules/ii/dock/DockMedia.qml
+index 3b28148..d79b98f 100644
+--- a/modules/ii/dock/DockMedia.qml
++++ b/modules/ii/dock/DockMedia.qml
+@@ -31,6 +31,7 @@ Item {
+     property string artFileName:         Qt.md5(artUrl)
+     property string artFilePath:         `${artDownloadLocation}/${artFileName}`
+     property bool   artDownloaded:       false
++    property string tempDataFilePath:    `${artDownloadLocation}/.temp_b64_data`
+ 
+     property string displayedArtFilePath: {
+         if (!root.artDownloaded) return ""
+@@ -61,16 +62,29 @@ Item {
+ 
+         artDownloader.targetFile  = root.artUrl
+         artDownloader.artFilePath = root.artFilePath
++        if (root.artUrl.startsWith("data:")) {
++            dataUriWriter.setText(root.artUrl)
++        }
+         root.artDownloaded = false
+         artDownloader.running = true
+     }
+ 
++    FileView {
++        id: dataUriWriter
++        path: Qt.resolvedUrl(root.tempDataFilePath)
++        blockWrites: true
++    }
++
+     Process {
+         id: artDownloader
+         property string targetFile:  root.artUrl
+         property string artFilePath: root.artFilePath
++        property bool isDataUri: targetFile?.startsWith("data:") ?? false
+         command: ["bash", "-c",
+-            `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`]
++            isDataUri
++                ? `cut -d',' -f2 '${root.tempDataFilePath}' | base64 -d > '${artFilePath}'`
++                : `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`
++        ]
+         onExited: { root.artDownloaded = true }
+     }
+ 
+diff --git a/modules/ii/sidebarLeft/SidebarPlayerControl.qml b/modules/ii/sidebarLeft/SidebarPlayerControl.qml
+index b397e07..a18a98e 100644
+--- a/modules/ii/sidebarLeft/SidebarPlayerControl.qml
++++ b/modules/ii/sidebarLeft/SidebarPlayerControl.qml
+@@ -37,6 +37,7 @@ Item {
+     property bool blurredBackground: Config.options.sidebar.media.blurredBackground ?? false
+     property bool shapeArt: Config.options.sidebar.media.shapeArt ?? false
+     readonly property var artShapeOptions: ["Circle", "Square", "Pill", "Bun", "Cookie12Sided", "Clover4Leaf", "Heart", "Slanted", "Arch", "Arrow", "SemiCircle", "Oval", "Triangle", "Diamond", "ClamShell", "Pentagon", "Gem", "Sunny", "VerySunny", "Cookie4Sided", "Cookie6Sided", "Cookie7Sided", "Cookie9Sided", "Ghostish", "Clover8Leaf", "Burst", "SoftBurst", "Boom", "SoftBoom", "Flower", "Puffy", "PuffyDiamond"]
++    property string tempDataFilePath: `${artDownloadLocation}/.temp_b64_data`
+ 
+     property string displayedArtFilePath: root.downloaded ? Qt.resolvedUrl(artFilePath) : ""
+ 
+@@ -54,15 +55,29 @@ Item {
+         }
+         coverArtDownloader.targetFile = root.artUrl
+         coverArtDownloader.artFilePath = root.artFilePath
++        if (root.artUrl.startsWith("data:")) {
++            dataUriWriter.setText(root.artUrl)
++        }
+         root.downloaded = false
+         coverArtDownloader.running = true
+     }
+ 
++    FileView {
++        id: dataUriWriter
++        path: Qt.resolvedUrl(root.tempDataFilePath)
++        blockWrites: true
++    }
++
+     Process {
+         id: coverArtDownloader
+         property string targetFile: root.artUrl
+         property string artFilePath: root.artFilePath
+-        command: ["bash", "-c", `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`]
++        property bool isDataUri: targetFile?.startsWith("data:") ?? false
++        command: ["bash", "-c",
++            isDataUri
++                ? `cut -d',' -f2 '${root.tempDataFilePath}' | base64 -d > '${artFilePath}'`
++                : `[ -f ${artFilePath} ] || curl -sSL '${targetFile}' -o '${artFilePath}'`
++        ]
+         onExited: (exitCode, exitStatus) => { root.downloaded = true }
+     }
+ 
+@@ -452,6 +467,7 @@ Item {
+ 
+                 RippleButton {
+                     property real baseSize: Math.max(36, parent.parent.height * 0.05)
++                    property real currVol: (root.player.volume ?? 1) != 0 ? (root.player.volume ?? 1) : currVol
+                     implicitWidth: baseSize
+                     implicitHeight: baseSize
+                     buttonRadius: Appearance.rounding.large
+@@ -479,7 +495,7 @@ Item {
+                     colBackgroundHover: blendedColors.colSecondaryContainerHover
+                     colRipple: blendedColors.colSecondaryContainerActive
+                     downAction: () => {
+-                        if (root.player) root.player.volume = (root.player.volume > 0) ? 0 : 1.0  
++                        if (root.player) root.player.volume = (root.player.volume > 0) ? 0 : currVol  
+                     }
+                     contentItem: MaterialSymbol {
+                         iconSize: 18
+@@ -501,7 +517,7 @@ Item {
+                     colBackgroundHover: blendedColors.colSecondaryContainerHover
+                     colRipple: blendedColors.colSecondaryContainerActive
+                     downAction: () => {
+-                        if (root.player) root.player.volume = Math.max(0, (root.player.volume ?? 1) - 0.1)  
++                        if (root.player) root.player.volume = Math.max(0, (root.player.volume ?? 1) - 0.02)  
+                     }
+                     contentItem: MaterialSymbol {
+                         iconSize: 18
+@@ -521,7 +537,7 @@ Item {
+                     colBackgroundHover: blendedColors.colSecondaryContainerHover
+                     colRipple: blendedColors.colSecondaryContainerActive
+                     downAction: () => {
+-                        if (root.player) root.player.volume = Math.min(1.5, (root.player.volume ?? 1) + 0.1)  
++                        if (root.player) root.player.volume = Math.min(1.5, (root.player.volume ?? 1) + 0.02)  
+                     }
+                     contentItem: MaterialSymbol {
+                         iconSize: 18
