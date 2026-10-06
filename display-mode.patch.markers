@@ -1,2 +1,3 @@
 modules/common/Config.qml:showDisplayModeToggle
 modules/ii/bar/UtilButtons.qml:cycleDisplayMode
+modules/ii/bar/UtilButtons.qml:displayModeSocket

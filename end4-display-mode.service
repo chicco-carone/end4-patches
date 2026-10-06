@@ -1,0 +1,15 @@
+[Unit]
+Description=Automatic display refresh profile control
+Requires=end4-display-mode.socket
+After=end4-display-mode.socket
+StartLimitIntervalSec=0
+
+[Service]
+ExecStart="@BIN_DIR@/ac-power-profile" --serve
+Environment="PATH=@BIN_DIR@:/usr/local/bin:/usr/bin:/bin"
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target

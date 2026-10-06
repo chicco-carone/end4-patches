@@ -1,0 +1,10 @@
+[Unit]
+Description=Display refresh mode control socket
+
+[Socket]
+ListenStream=%t/end4-display-mode.sock
+SocketMode=0600
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

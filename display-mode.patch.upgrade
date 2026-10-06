@@ -1,0 +1,61 @@
+diff --git a/modules/ii/bar/UtilButtons.qml b/modules/ii/bar/UtilButtons.qml
+index 1575995..75270d7 100644
+--- a/modules/ii/bar/UtilButtons.qml
++++ b/modules/ii/bar/UtilButtons.qml
+@@ -27,14 +27,48 @@ Item {
+     }
+ 
+     function applyDisplayMode() {
+-        const mode = Config.options.bar.utilButtons.displayMode
+-        const stateFile = "${XDG_RUNTIME_DIR:-/tmp}/end4-display-mode"
+-        const manualMode = mode === "120hz" ? "120hz" : "60hz"
+-        const profile = mode === "120hz" ? "Builtin" : "Builtin 60hz"
+-        const command = mode === "auto"
+-            ? `printf '%s\\n' auto > "${stateFile}"; ac-power-profile --apply`
+-            : `printf '%s\\n' ${manualMode} > "${stateFile}"; monique --switch-profile "${profile}"`
+-        Quickshell.execDetached(["bash", "-c", command])
++        displayModeSocket.pendingMode = Config.options.bar.utilButtons.displayMode
++        if (!displayModeSocket.connected)
++            displayModeSocket.connected = true
++    }
++
++    Component.onCompleted: displayModeDebounce.restart()
++
++    Connections {
++        target: Config.options.bar.utilButtons
++        function onDisplayModeChanged() { displayModeDebounce.restart() }
++    }
++
++    Socket {
++        id: displayModeSocket
++        path: Quickshell.env("XDG_RUNTIME_DIR") + "/end4-display-mode.sock"
++        property string pendingMode: ""
++        property string sentMode: ""
++        onConnectedChanged: {
++            if (connected) {
++                sentMode = pendingMode
++                write(sentMode + "\n")
++                flush()
++            } else if (pendingMode.length > 0) {
++                displayModeDebounce.restart()
++            }
++        }
++        onError: (error) => {
++            if (pendingMode.length > 0) {
++                console.warn("Display mode socket error:", error)
++                displayModeDebounce.restart()
++            }
++        }
++        parser: SplitParser {
++            onRead: (message) => {
++                if (message.trim() !== "ok") {
++                    console.warn("Display mode request failed:", message)
++                    displayModeSocket.pendingMode = ""
++                } else if (displayModeSocket.pendingMode === displayModeSocket.sentMode) {
++                    displayModeSocket.pendingMode = ""
++                }
++            }
++        }
+     }
+ 
+     Timer {

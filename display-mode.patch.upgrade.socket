@@ -1,0 +1,58 @@
+diff --git a/modules/ii/bar/UtilButtons.qml b/modules/ii/bar/UtilButtons.qml
+index 5acc7a3..75270d7 100644
+--- a/modules/ii/bar/UtilButtons.qml
++++ b/modules/ii/bar/UtilButtons.qml
+@@ -23,10 +23,13 @@ Item {
+         case "120hz": Config.options.bar.utilButtons.displayMode = "60hz"; break;
+         default: Config.options.bar.utilButtons.displayMode = "auto"; break;
+         }
++        displayModeDebounce.restart()
+     }
+ 
+     function applyDisplayMode() {
+-        Quickshell.execDetached(["ac-power-profile", "--set-mode", Config.options.bar.utilButtons.displayMode])
++        displayModeSocket.pendingMode = Config.options.bar.utilButtons.displayMode
++        if (!displayModeSocket.connected)
++            displayModeSocket.connected = true
+     }
+ 
+     Component.onCompleted: displayModeDebounce.restart()
+@@ -36,6 +39,38 @@ Item {
+         function onDisplayModeChanged() { displayModeDebounce.restart() }
+     }
+ 
++    Socket {
++        id: displayModeSocket
++        path: Quickshell.env("XDG_RUNTIME_DIR") + "/end4-display-mode.sock"
++        property string pendingMode: ""
++        property string sentMode: ""
++        onConnectedChanged: {
++            if (connected) {
++                sentMode = pendingMode
++                write(sentMode + "\n")
++                flush()
++            } else if (pendingMode.length > 0) {
++                displayModeDebounce.restart()
++            }
++        }
++        onError: (error) => {
++            if (pendingMode.length > 0) {
++                console.warn("Display mode socket error:", error)
++                displayModeDebounce.restart()
++            }
++        }
++        parser: SplitParser {
++            onRead: (message) => {
++                if (message.trim() !== "ok") {
++                    console.warn("Display mode request failed:", message)
++                    displayModeSocket.pendingMode = ""
++                } else if (displayModeSocket.pendingMode === displayModeSocket.sentMode) {
++                    displayModeSocket.pendingMode = ""
++                }
++            }
++        }
++    }
++
+     Timer {
+         id: displayModeDebounce
+         interval: 1000

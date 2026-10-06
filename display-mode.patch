@@ -1,10 +1,10 @@
 diff --git a/modules/common/Config.qml b/modules/common/Config.qml
-index 55b6e8f..6a598a5 100644
+index 9e4e61d..20adf55 100644
 --- a/modules/common/Config.qml
 +++ b/modules/common/Config.qml
-@@ -405,6 +405,8 @@ Singleton {
-                     property bool showWallpaperToggle: false
-                     property bool showDarkModeToggle: true
+@@ -525,6 +525,8 @@ Singleton {
+                     property bool showWallpaperToggle: true
+                     property bool showDarkModeToggle: false
                      property bool showPerformanceProfileToggle: false
 +                    property bool showDisplayModeToggle: false
 +                    property string displayMode: "auto" // auto, 120hz, 60hz
@@ -66,10 +66,10 @@ index a5cf86e..36e47b3 100644
 \ No newline at end of file
 +}
 diff --git a/modules/ii/bar/UtilButtons.qml b/modules/ii/bar/UtilButtons.qml
-index 2391b1b..b2128a6 100644
+index 8e02b5a..75270d7 100644
 --- a/modules/ii/bar/UtilButtons.qml
 +++ b/modules/ii/bar/UtilButtons.qml
-@@ -18,6 +18,32 @@ Item {
+@@ -17,6 +17,66 @@ Item {
      implicitWidth: isMaterial && !root.vertical ? flow.implicitWidth : root.vertical ? Appearance.sizes.verticalBarWidth - 14 : flow.implicitWidth + 4
      implicitHeight: isMaterial && root.vertical ? flow.implicitHeight: isMaterial ? 32 : root.vertical ? flow.implicitHeight + 4 : Appearance.sizes.barHeight
  
@@ -83,14 +83,48 @@ index 2391b1b..b2128a6 100644
 +    }
 +
 +    function applyDisplayMode() {
-+        const mode = Config.options.bar.utilButtons.displayMode
-+        const stateFile = "${XDG_RUNTIME_DIR:-/tmp}/end4-display-mode"
-+        const manualMode = mode === "120hz" ? "120hz" : "60hz"
-+        const profile = mode === "120hz" ? "Builtin" : "Builtin 60hz"
-+        const command = mode === "auto"
-+            ? `printf '%s\\n' auto > "${stateFile}"; ac-power-profile --apply`
-+            : `printf '%s\\n' ${manualMode} > "${stateFile}"; monique --switch-profile "${profile}"`
-+        Quickshell.execDetached(["bash", "-c", command])
++        displayModeSocket.pendingMode = Config.options.bar.utilButtons.displayMode
++        if (!displayModeSocket.connected)
++            displayModeSocket.connected = true
++    }
++
++    Component.onCompleted: displayModeDebounce.restart()
++
++    Connections {
++        target: Config.options.bar.utilButtons
++        function onDisplayModeChanged() { displayModeDebounce.restart() }
++    }
++
++    Socket {
++        id: displayModeSocket
++        path: Quickshell.env("XDG_RUNTIME_DIR") + "/end4-display-mode.sock"
++        property string pendingMode: ""
++        property string sentMode: ""
++        onConnectedChanged: {
++            if (connected) {
++                sentMode = pendingMode
++                write(sentMode + "\n")
++                flush()
++            } else if (pendingMode.length > 0) {
++                displayModeDebounce.restart()
++            }
++        }
++        onError: (error) => {
++            if (pendingMode.length > 0) {
++                console.warn("Display mode socket error:", error)
++                displayModeDebounce.restart()
++            }
++        }
++        parser: SplitParser {
++            onRead: (message) => {
++                if (message.trim() !== "ok") {
++                    console.warn("Display mode request failed:", message)
++                    displayModeSocket.pendingMode = ""
++                } else if (displayModeSocket.pendingMode === displayModeSocket.sentMode) {
++                    displayModeSocket.pendingMode = ""
++                }
++            }
++        }
 +    }
 +
 +    Timer {
@@ -102,7 +136,7 @@ index 2391b1b..b2128a6 100644
      Flow {
          id: flow
          anchors.centerIn: parent
-@@ -323,5 +349,34 @@ Item {
+@@ -322,5 +382,34 @@ Item {
                  }
              }
          }
@@ -140,10 +174,10 @@ index 2391b1b..b2128a6 100644
 \ No newline at end of file
 +}
 diff --git a/modules/ii/settings/pages/BarConfig.qml b/modules/ii/settings/pages/BarConfig.qml
-index 4ec1310..2d18384 100644
+index 1da817b..43fff81 100644
 --- a/modules/ii/settings/pages/BarConfig.qml
 +++ b/modules/ii/settings/pages/BarConfig.qml
-@@ -391,6 +391,12 @@ ContentPage {
+@@ -559,6 +559,12 @@ ContentPage {
                  }
                  ConfigRow {
                      uniform: true
@@ -156,10 +190,3 @@ index 4ec1310..2d18384 100644
                      ConfigSwitch {
                          buttonIcon: "screen_record"
                          text: Translation.tr("Record Screen")
-@@ -591,4 +597,4 @@ ContentPage {
-             }
-         }
-     }
--}
-\ No newline at end of file
-+}

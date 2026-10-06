@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-repo="$HOME/.config/quickshell/end4-pC"
+repo="${END4_REPO:-$HOME/.config/quickshell/end4-pC}"
 patch="$(dirname "$(readlink -f "$0")")/display-mode.patch"
 
 usage() {
@@ -11,11 +11,11 @@ usage() {
 }
 
 apply_patch() {
-    git -C "$repo" apply --3way "$patch"
+    "$(dirname "$patch")/patches.sh" apply display-mode
 }
 
 remove_patch() {
-    git -C "$repo" apply --reverse "$patch"
+    "$(dirname "$patch")/patches.sh" remove display-mode
 }
 
 case "${1:-apply}" in

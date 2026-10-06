@@ -6,6 +6,7 @@ set -euo pipefail
 script_dir="$(dirname "$(readlink -f "$0")")"
 repo="${END4_REPO:-$HOME/.config/quickshell/end4-pC}"
 bin_dir="${END4_BIN_DIR:-$HOME/.local/bin}"
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 
 usage() {
     printf 'Usage: %s [list|select|apply|remove] [patch ...]\n' "${0##*/}"
@@ -96,9 +97,56 @@ install_helpers() {
     done < "$patch.scripts"
 }
 
+install_units() {
+    local patch=$1 unit units=()
+    [[ -f "$patch.units" ]] || return 0
+    mkdir -p "$unit_dir"
+    while IFS= read -r unit; do
+        [[ -n $unit && -f "$script_dir/$unit" ]] || return 1
+        python3 - "$script_dir/$unit" "$unit_dir/$unit" "$bin_dir" <<'PY'
+import sys
+from pathlib import Path
+source, destination, bin_dir = sys.argv[1:]
+bin_dir = str(Path(bin_dir).resolve()).replace('%', '%%').replace('\\', '\\\\').replace('"', '\\"')
+Path(destination).write_text(Path(source).read_text().replace('@BIN_DIR@', bin_dir))
+PY
+        units+=("$unit")
+    done < "$patch.units"
+    systemctl --user daemon-reload
+    systemctl --user enable "${units[@]}"
+    # Start sockets first, then reload workers after installing their helpers.
+    for unit in "${units[@]}"; do
+        if [[ $unit == *.service ]]; then
+            systemctl --user restart "$unit"
+        else
+            systemctl --user start "$unit"
+        fi
+    done
+}
+
+remove_units() {
+    local patch=$1 unit units=()
+    [[ -f "$patch.units" ]] || return 0
+    while IFS= read -r unit; do
+        [[ -n $unit ]] && units+=("$unit")
+    done < "$patch.units"
+    systemctl --user disable --now "${units[@]}"
+    for unit in "${units[@]}"; do
+        rm -f "$unit_dir/$unit"
+    done
+    systemctl --user daemon-reload
+}
+
 apply_one() {
-    local patch=$1 dependency
+    local patch=$1 dependency upgrade
     install_helpers "$patch"
+    # Upgrade an older installed variant without touching other local patches.
+    for upgrade in "$patch.upgrade" "$patch.upgrade."*; do
+        if [[ -f "$upgrade" ]] && git -C "$repo" apply --check "$upgrade" >/dev/null 2>&1; then
+            git -C "$repo" apply --3way "$upgrade"
+            printf 'Upgraded %s\n' "$(patch_name "$patch")"
+        fi
+    done
     if is_installed "$patch"; then
         printf '%s is already installed\n' "$(patch_name "$patch")"
     else
@@ -110,12 +158,14 @@ apply_one() {
         git -C "$repo" apply --3way --recount "$patch"
         printf 'Installed %s\n' "$(patch_name "$patch")"
     fi
+    install_units "$patch"
 }
 
 remove_one() {
     local patch=$1
     if is_directly_installed "$patch"; then
         git -C "$repo" apply --3way --reverse --recount "$patch"
+        remove_units "$patch"
         printf 'Removed %s\n' "$(patch_name "$patch")"
     elif is_installed "$patch"; then
         printf '%s is required by an installed patch and cannot be removed yet\n' "$(patch_name "$patch")" >&2

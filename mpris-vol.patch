@@ -42,10 +42,10 @@ index 55618e9..3290c12 100644
              root.downloaded = true
          }
 diff --git a/modules/ii/background/widgets/media/MediaWidget.qml b/modules/ii/background/widgets/media/MediaWidget.qml
-index 66410c6..21858c5 100644
+index 60f9f81..f115224 100644
 --- a/modules/ii/background/widgets/media/MediaWidget.qml
 +++ b/modules/ii/background/widgets/media/MediaWidget.qml
-@@ -94,6 +94,7 @@ AbstractBackgroundWidget {
+@@ -84,6 +84,7 @@ AbstractBackgroundWidget {
  
      property bool downloaded: false
      property bool showLyrics: false
@@ -53,7 +53,7 @@ index 66410c6..21858c5 100644
  
      property string displayedArtFilePath: {
          if (!root.downloaded) return ""
-@@ -117,15 +118,29 @@ AbstractBackgroundWidget {
+@@ -107,15 +108,29 @@ AbstractBackgroundWidget {
          }
          coverArtDownloader.targetFile = root.artUrl
          coverArtDownloader.artFilePath = root.artFilePath
@@ -85,10 +85,10 @@ index 66410c6..21858c5 100644
      }
  
 diff --git a/modules/ii/bar/Media.qml b/modules/ii/bar/Media.qml
-index f1ed52c..afeca80 100644
+index 90aa8cc..fa39a15 100644
 --- a/modules/ii/bar/Media.qml
 +++ b/modules/ii/bar/Media.qml
-@@ -43,6 +43,7 @@ Item {
+@@ -33,6 +33,7 @@ Item {
      property string artFileName:         Qt.md5(artUrl)
      property string artFilePath:         `${artDownloadLocation}/${artFileName}`
      property bool   artDownloaded:       false
@@ -96,7 +96,7 @@ index f1ed52c..afeca80 100644
  
      property string displayedArtFilePath: {
          if (!root.artDownloaded) return ""
-@@ -61,16 +62,29 @@ Item {
+@@ -51,16 +52,29 @@ Item {
          }
          artDownloader.targetFile  = root.artUrl
          artDownloader.artFilePath = root.artFilePath
@@ -171,7 +171,7 @@ index 3b28148..d79b98f 100644
      }
  
 diff --git a/modules/ii/sidebarLeft/SidebarPlayerControl.qml b/modules/ii/sidebarLeft/SidebarPlayerControl.qml
-index b397e07..a18a98e 100644
+index b397e07..6707311 100644
 --- a/modules/ii/sidebarLeft/SidebarPlayerControl.qml
 +++ b/modules/ii/sidebarLeft/SidebarPlayerControl.qml
 @@ -37,6 +37,7 @@ Item {
@@ -217,7 +217,7 @@ index b397e07..a18a98e 100644
  
                  RippleButton {
                      property real baseSize: Math.max(36, parent.parent.height * 0.05)
-+                    property real currVol: (root.player.volume ?? 1) != 0 ? (root.player.volume ?? 1) : currVol
++                    property real currVol: 1
                      implicitWidth: baseSize
                      implicitHeight: baseSize
                      buttonRadius: Appearance.rounding.large
@@ -226,7 +226,7 @@ index b397e07..a18a98e 100644
                      colRipple: blendedColors.colSecondaryContainerActive
                      downAction: () => {
 -                        if (root.player) root.player.volume = (root.player.volume > 0) ? 0 : 1.0  
-+                        if (root.player) root.player.volume = (root.player.volume > 0) ? 0 : currVol  
++                        if (root.player) { if (root.player.volume > 0) { currVol = root.player.volume; root.player.volume = 0 } else root.player.volume = currVol }
                      }
                      contentItem: MaterialSymbol {
                          iconSize: 18
@@ -235,7 +235,7 @@ index b397e07..a18a98e 100644
                      colRipple: blendedColors.colSecondaryContainerActive
                      downAction: () => {
 -                        if (root.player) root.player.volume = Math.max(0, (root.player.volume ?? 1) - 0.1)  
-+                        if (root.player) root.player.volume = Math.max(0, (root.player.volume ?? 1) - 0.02)  
++                        if (root.player) root.player.volume = Math.max(0, (root.player.volume ?? 1) - 0.02)
                      }
                      contentItem: MaterialSymbol {
                          iconSize: 18
@@ -244,7 +244,7 @@ index b397e07..a18a98e 100644
                      colRipple: blendedColors.colSecondaryContainerActive
                      downAction: () => {
 -                        if (root.player) root.player.volume = Math.min(1.5, (root.player.volume ?? 1) + 0.1)  
-+                        if (root.player) root.player.volume = Math.min(1.5, (root.player.volume ?? 1) + 0.02)  
++                        if (root.player) root.player.volume = Math.min(1.5, (root.player.volume ?? 1) + 0.02)
                      }
                      contentItem: MaterialSymbol {
                          iconSize: 18

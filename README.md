@@ -26,12 +26,31 @@ Use `patches.sh list` to show status, or `patches.sh apply NAME` and
 target repository is not `~/.config/quickshell/end4-pC`.
 
 Selecting the display patch installs `ac-power-profile` into
-`~/.local/bin` automatically. Ensure that directory is in `PATH`; set
-`END4_BIN_DIR` to use another installation directory. Selecting the peripheral
+`~/.local/bin` and enables the `end4-display-mode.service` and
+`end4-display-mode.socket` systemd user units automatically. Reapplying the patch
+upgrades the old button in place. The button connects directly to the socket,
+without relying on `PATH`. Set `END4_BIN_DIR` to use another helper installation
+directory. Selecting the peripheral
 battery and G84 toggle patches likewise installs `epomaker-battery` and
 `g84-profile.py`; the peripheral patch still expects `mow` in `PATH`.
-The VPN patch depends on the display patch; the selector installs that dependency
-automatically.
+Each patch is standalone and can be installed or removed independently.
+
+The display worker requires Python 3 and Monique profiles named `Builtin` (120 Hz)
+and `Builtin 60hz`. It starts at user login, waits for Hyprland, and checks AC
+power every two seconds: AUTO uses 120 Hz on AC and 60 Hz on battery. Manual
+selections override AC changes. Only the worker calls Monique; the button sends
+`auto`, `120hz`, or `60hz` through `$XDG_RUNTIME_DIR/end4-display-mode.sock`.
+The selected mode survives worker restarts and logins in
+`~/.local/state/end4/display-mode` (or under `XDG_STATE_HOME`). The bar sends its
+saved selection when it starts. Failed profile changes retry automatically, and
+systemd restarts the worker after a crash. Removing the patch disables and removes
+both units.
+
+```bash
+ac-power-profile --set-mode auto
+systemctl --user status end4-display-mode.service end4-display-mode.socket
+journalctl --user -u end4-display-mode.service -b
+```
 
 The Codex usage indicator requires [`codexbar`](https://github.com/steipete/codexbar)
 in `PATH`. Add **Codex Usage** to a bar layout in Settings, then hold it to show

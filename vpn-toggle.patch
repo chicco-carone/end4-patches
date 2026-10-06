@@ -1,25 +1,24 @@
 diff --git a/modules/common/Config.qml b/modules/common/Config.qml
-index 6a598a5..a17cb72 100644
+index 9e4e61d..87472dd 100644
 --- a/modules/common/Config.qml
 +++ b/modules/common/Config.qml
-@@ -406,6 +406,8 @@ Singleton {
-                     property bool showDarkModeToggle: true
+@@ -525,6 +525,8 @@ Singleton {
+                     property bool showWallpaperToggle: true
+                     property bool showDarkModeToggle: false
                      property bool showPerformanceProfileToggle: false
-                     property bool showDisplayModeToggle: false
 +                    property bool showVpnToggle: false
 +                    property string vpnConnection: ""
-                     property string displayMode: "auto" // auto, 120hz, 60hz
                      property bool showScreenRecord: false       
                      property bool isRecording: false
+                 }
 diff --git a/modules/ii/bar/UtilButtons.qml b/modules/ii/bar/UtilButtons.qml
-index b2128a6..223614e 100644
+index 8e02b5a..23fe8fe 100644
 --- a/modules/ii/bar/UtilButtons.qml
 +++ b/modules/ii/bar/UtilButtons.qml
-@@ -378,5 +378,40 @@ Item {
+@@ -322,5 +322,34 @@ Item {
                  }
              }
          }
-+
 +        Loader {
 +            active: Config.options.bar.utilButtons.showVpnToggle
 +            visible: active
@@ -30,10 +29,7 @@ index b2128a6..223614e 100644
 +            UtilButton {
 +                iconText: vpn.active ? "vpn_key" : "vpn_key_off"
 +                onClicked: vpn.toggle()
-+
-+                VpnToggle {
-+                    id: vpn
-+                }
++                VpnToggle { id: vpn }
 +            }
 +        }
 +        Component {
@@ -48,51 +44,13 @@ index b2128a6..223614e 100644
 +                    iconSize: Appearance.font.pixelSize.large
 +                    color: vpn.active ? Appearance.colors.colPrimary : Appearance.colors.colOnLayer2
 +                }
-+
-+                VpnToggle {
-+                    id: vpn
-+                }
++                VpnToggle { id: vpn }
 +            }
 +        }
++
      }
  }
-diff --git a/modules/ii/settings/pages/BarConfig.qml b/modules/ii/settings/pages/BarConfig.qml
-index 2d18384..33adb27 100644
---- a/modules/ii/settings/pages/BarConfig.qml
-+++ b/modules/ii/settings/pages/BarConfig.qml
-@@ -391,6 +391,12 @@ ContentPage {
-                 }
-                 ConfigRow {
-                     uniform: true
-+                    ConfigSwitch {
-+                        buttonIcon: "vpn_key"
-+                        text: Translation.tr("VPN toggle")
-+                        checked: Config.options.bar.utilButtons.showVpnToggle
-+                        onCheckedChanged: { Config.options.bar.utilButtons.showVpnToggle = checked }
-+                    }
-                     ConfigSwitch {
-                         buttonIcon: "display_settings"
-                         text: Translation.tr("Display mode")
-@@ -410,6 +416,19 @@ ContentPage {
-                         onCheckedChanged: { Config.options.bar.utilButtons.showWallpaperToggle = checked }
-                     }
-                 }
-+                ConfigRow {
-+                    StyledText {
-+                        Layout.preferredWidth: 140
-+                        text: Translation.tr("VPN connection name")
-+                        color: Appearance.colors.colOnLayer1
-+                    }
-+                    MaterialTextField {
-+                        Layout.fillWidth: true
-+                        placeholderText: Translation.tr("NetworkManager profile")
-+                        text: Config.options.bar.utilButtons.vpnConnection
-+                        onEditingFinished: Config.options.bar.utilButtons.vpnConnection = text.trim()
-+                    }
-+                }
-             }
-         }
- 
+\ No newline at end of file
 diff --git a/modules/ii/bar/VpnToggle.qml b/modules/ii/bar/VpnToggle.qml
 new file mode 100644
 index 0000000..c8588a5
@@ -151,3 +109,39 @@ index 0000000..c8588a5
 +        onExited: root.refresh()
 +    }
 +}
+diff --git a/modules/ii/settings/pages/BarConfig.qml b/modules/ii/settings/pages/BarConfig.qml
+index 1da817b..77288fd 100644
+--- a/modules/ii/settings/pages/BarConfig.qml
++++ b/modules/ii/settings/pages/BarConfig.qml
+@@ -544,6 +544,12 @@ ContentPage {
+                 }
+                 ConfigRow {
+                     uniform: true
++                    ConfigSwitch {
++                        buttonIcon: "vpn_key"
++                        text: Translation.tr("VPN toggle")
++                        checked: Config.options.bar.utilButtons.showVpnToggle
++                        onCheckedChanged: { Config.options.bar.utilButtons.showVpnToggle = checked }
++                    }
+                     ConfigSwitch {
+                         buttonIcon: "dark_mode"
+                         text: Translation.tr("Dark/Light toggle")
+@@ -572,5 +578,16 @@ ContentPage {
+                         onCheckedChanged: { Config.options.bar.utilButtons.showWallpaperToggle = checked }
+                     }
+                 }
++                ConfigRow {
++                    StyledText {
++                        Layout.preferredWidth: 140
++                        text: Translation.tr("VPN connection name")
++                        color: Appearance.colors.colOnLayer1
++                    }
++                    MaterialTextField {
++                        Layout.fillWidth: true
++                        placeholderText: Translation.tr("NetworkManager profile")
++                        text: Config.options.bar.utilButtons.vpnConnection
++                        onEditingFinished: Config.options.bar.utilButtons.vpnConnection = text.trim()
++                    }
++                }
+             }
+         }

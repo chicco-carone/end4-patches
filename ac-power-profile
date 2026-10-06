@@ -1,91 +1,204 @@
-#!/usr/bin/env bash
-# Switch the display profile after kernel/udev power-supply events.
+#!/usr/bin/env python3
+"""Systemd-owned display profile worker and Unix socket client."""
 
-set -u
+import argparse
+import logging
+import os
+from pathlib import Path
+import selectors
+import shutil
+import socket
+import subprocess
+import time
 
-# udev may invoke this helper without the user's interactive environment.
-export PATH="${PATH:-/usr/local/bin:/usr/bin:/bin}"
+MODES = ("auto", "120hz", "60hz")
+POLL_INTERVAL = 2
+RETRY_INTERVAL = 5
+LOG = logging.getLogger("ac-power-profile")
 
-state_file="${XDG_RUNTIME_DIR:-/tmp}/end4-display-mode"
 
-# Resolve the mode from the bar state.  Older versions wrote `60hz` and
-# `auto`, while the profile names are `Builtin 60hz` and `Builtin`.
-state_mode() {
-  local selected
-  [[ -r $state_file ]] || return 1
-  read -r selected < "$state_file" || return 1
-  case ${selected,,} in
-    auto) return 1 ;;
-    60hz|builtin\ 60hz) printf '%s\n' 'Builtin 60hz' ;;
-    builtin) printf '%s\n' 'Builtin' ;;
-    *) return 1 ;;
-  esac
-}
+def runtime_dir():
+    return Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
 
-auto_selected() {
-  local selected
-  [[ -r $state_file ]] || return 0
-  read -r selected < "$state_file" || return 0
-  [[ ${selected,,} == auto ]]
-}
 
-monique_bin=$(command -v monique 2>/dev/null || true)
-[[ -n $monique_bin ]] || {
-  printf 'monique is not available in PATH\n' >&2
-  exit 1
-}
+def state_file():
+    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "end4/display-mode"
 
-ac_online() {
-  local supply type online
 
-  for supply in /sys/class/power_supply/*; do
-    [[ -r "$supply/type" && -r "$supply/online" ]] || continue
-    read -r type < "$supply/type"
-    read -r online < "$supply/online"
-    [[ $type == Mains && $online == 1 ]] && return 0
-  done
+def read_mode(path):
+    try:
+        mode = path.read_text().strip().lower()
+    except OSError:
+        return None
+    mode = {"builtin": "120hz", "builtin 60hz": "60hz"}.get(mode, mode)
+    return mode if mode in MODES else None
 
-  return 1
-}
 
-last_mode=
-apply_mode() {
-    local mode
+def save_mode(mode):
+    path = state_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(mode + "\n")
+    temporary.replace(path)
+    # Keep the old runtime state readable for existing local tools.
+    (runtime_dir() / "end4-display-mode").write_text(mode + "\n")
 
-    # A bar-selected refresh rate takes priority until AUTO is selected again.
-    if ! auto_selected; then
-      mode=$(state_mode) || return
-      "$monique_bin" --switch-profile "$mode"
-      last_mode=$mode
-      return
-    fi
 
-  if ac_online; then
-    mode='Builtin'
-  else
-    mode='Builtin 60hz'
-  fi
+def ac_online():
+    for supply in Path("/sys/class/power_supply").glob("*"):
+        try:
+            if supply.joinpath("type").read_text().strip() == "Mains" and supply.joinpath("online").read_text().strip() == "1":
+                return True
+        except OSError:
+            continue
+    return False
 
-  [[ $mode == "$last_mode" ]] && return
-  "$monique_bin" --switch-profile "$mode"
-  last_mode=$mode
-}
 
-apply_mode
+def session_signature():
+    """Discover Hyprland even when the user manager started before the session."""
+    directory = runtime_dir() / "hypr"
+    inherited = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE", "")
+    candidates = []
+    for path in directory.glob("*/.socket.sock"):
+        try:
+            candidates.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    candidates.sort(reverse=True)
+    if inherited:
+        candidates.sort(key=lambda item: item[1].parent.name != inherited)
+    for _, path in candidates:
+        try:
+            with socket.socket(socket.AF_UNIX) as probe:
+                probe.settimeout(0.5)
+                probe.connect(str(path))
+            return path.parent.name
+        except OSError:
+            continue
+    return None
 
-[[ ${1:-} == --apply ]] && exit 0
 
-# Keep the event listener alive when launched by a service, but do not fail
-# when udevadm is unavailable or produces no events.
-command -v udevadm >/dev/null 2>&1 || exit 0
+class Worker:
+    def __init__(self):
+        self.mode = read_mode(state_file()) or read_mode(runtime_dir() / "end4-display-mode") or "auto"
+        self.last_applied = None
+        self.retry_after = 0
 
-type=
-while IFS= read -r line; do
-  case "$line" in
-    POWER_SUPPLY_TYPE=*) type=${line#*=} ;;
-    '')
-      [[ $type == Mains || $type == Battery ]] && apply_mode
-      type=
-      ;;
-  esac
-done < <(udevadm monitor --udev --property --subsystem-match=power_supply)
+    def select_mode(self, mode):
+        save_mode(mode)
+        if mode == self.mode:
+            return
+        self.mode = mode
+        self.last_applied = None
+        self.retry_after = 0
+        LOG.info("Selected %s", mode)
+
+    def apply(self):
+        signature = session_signature()
+        if signature is None:
+            self.last_applied = None
+            return
+        profile = "Builtin" if self.mode == "120hz" or (self.mode == "auto" and ac_online()) else "Builtin 60hz"
+        desired = (signature, profile)
+        if desired == self.last_applied or time.monotonic() < self.retry_after:
+            return
+        env = os.environ.copy()
+        env["HYPRLAND_INSTANCE_SIGNATURE"] = signature
+        try:
+            monique = shutil.which("monique")
+            if monique is None:
+                raise OSError("monique is not available in PATH")
+            result = subprocess.run([monique, "--switch-profile", profile], env=env, timeout=15, check=False)
+            if result.returncode:
+                raise OSError(f"monique exited with status {result.returncode}")
+        except (OSError, subprocess.TimeoutExpired) as error:
+            LOG.warning("Cannot apply %s; retrying: %s", profile, error)
+            self.last_applied = None
+            self.retry_after = time.monotonic() + RETRY_INTERVAL
+            return
+        self.last_applied = desired
+        self.retry_after = 0
+        LOG.info("Applied %s (%s)", profile, self.mode)
+
+
+def serve():
+    if os.environ.get("LISTEN_PID") != str(os.getpid()) or os.environ.get("LISTEN_FDS") != "1":
+        raise RuntimeError("Start the worker with systemctl --user start end4-display-mode.service")
+    listener = socket.socket(fileno=3)
+    listener.setblocking(False)
+    worker = Worker()
+    selector = selectors.DefaultSelector()
+    selector.register(listener, selectors.EVENT_READ)
+    next_poll = 0
+    while True:
+        for key, _ in selector.select(max(0, next_poll - time.monotonic())):
+            if key.fileobj is listener:
+                connection, _ = listener.accept()
+                connection.setblocking(False)
+                selector.register(connection, selectors.EVENT_READ, (bytearray(), time.monotonic()))
+                continue
+            connection = key.fileobj
+            buffer, _ = key.data
+            close = True
+            try:
+                chunk = connection.recv(128)
+                buffer.extend(chunk)
+                if b"\n" not in buffer and chunk and len(buffer) <= 128:
+                    close = False
+                    continue
+                mode = bytes(buffer).decode("ascii").strip()
+                if mode not in MODES:
+                    connection.sendall(b"error: expected auto, 120hz or 60hz\n")
+                else:
+                    worker.select_mode(mode)
+                    connection.sendall(b"ok\n")
+                    next_poll = 0
+            except (OSError, UnicodeError) as error:
+                LOG.warning("Socket request failed: %s", error)
+            finally:
+                if close:
+                    selector.unregister(connection)
+                    connection.close()
+        now = time.monotonic()
+        for key in list(selector.get_map().values()):
+            if key.fileobj is not listener and now - key.data[1] > 5:
+                selector.unregister(key.fileobj)
+                key.fileobj.close()
+        if now >= next_poll:
+            worker.apply()
+            next_poll = time.monotonic() + POLL_INTERVAL
+
+
+def send_mode(mode):
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(20)
+        connection.connect(str(runtime_dir() / "end4-display-mode.sock"))
+        connection.sendall((mode + "\n").encode("ascii"))
+        response = bytearray()
+        while b"\n" not in response and len(response) < 128:
+            chunk = connection.recv(128)
+            if not chunk:
+                break
+            response.extend(chunk)
+        if response != b"ok\n":
+            raise RuntimeError(response.decode("ascii", errors="replace").strip() or "worker closed the connection")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    action = parser.add_mutually_exclusive_group(required=True)
+    action.add_argument("--serve", action="store_true")
+    action.add_argument("--set-mode", choices=MODES)
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    try:
+        if args.serve:
+            serve()
+        else:
+            send_mode(args.set_mode)
+    except (OSError, RuntimeError) as error:
+        parser.exit(1, f"ac-power-profile: {error}\n")
+
+
+if __name__ == "__main__":
+    main()
