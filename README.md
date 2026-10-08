@@ -6,6 +6,7 @@ This folder contains optional local changes for `~/.config/quickshell/end4-pC`.
 | --- | --- |
 | Display refresh mode button | `display-mode.patch` |
 | NetworkManager VPN button | `vpn-toggle.patch` |
+| ModemManager LTE/cellular signal indicator | `lte-signal.patch` |
 | Peripheral battery indicator | `end4-peripheral-battery.patch` |
 | G84 profile toggle | `g84-profile-toggle.patch` |
 | Compact Codex usage indicator | `codex-usage.patch` |
@@ -34,6 +35,19 @@ directory. Selecting the peripheral
 battery and G84 toggle patches likewise installs `epomaker-battery` and
 `g84-profile.py`; the peripheral patch still expects `mow` in `PATH`.
 Each patch is standalone and can be installed or removed independently.
+
+The LTE patch adds cellular signal bars beside the Wi-Fi/Ethernet icon whenever
+ModemManager detects a modem. It requires `mmcli` (ModemManager) in `PATH`, with
+no helper script or extra service. It reads cached modem status every 10 seconds
+and hides the icon when no modem is found. Hover for the operator, radio technology,
+connection state, and signal percentage. Disabled or locked modems show an off
+icon; unregistered modems or unavailable signal readings show a no-data icon.
+If several modems are present, a connected modem takes priority, followed by a
+registered modem. This also works with cellular technologies other than LTE.
+
+```bash
+~/end4-patches/patches.sh apply lte-signal
+```
 
 The display worker requires Python 3 and Monique profiles named `Builtin` (120 Hz)
 and `Builtin 60hz`. It starts at user login, waits for Hyprland, and checks AC

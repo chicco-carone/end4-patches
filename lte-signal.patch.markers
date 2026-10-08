@@ -1,0 +1,2 @@
+modules/ii/bar/SystemIcons.qml:visible: Cellular.present
+services/Cellular.qml:readonly property string materialSymbol

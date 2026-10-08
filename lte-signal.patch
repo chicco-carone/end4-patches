@@ -1,0 +1,140 @@
+diff --git a/modules/ii/bar/SystemIcons.qml b/modules/ii/bar/SystemIcons.qml
+index 83b0a28..adc636e 100644
+--- a/modules/ii/bar/SystemIcons.qml
++++ b/modules/ii/bar/SystemIcons.qml
+@@ -130,6 +130,24 @@ Item {
+             iconSize: Appearance.font.pixelSize.larger
+             color: root.iconColor
+         }
++        MaterialSymbol {
++            visible: Cellular.present
++            text: Cellular.materialSymbol
++            iconSize: Appearance.font.pixelSize.larger
++            color: root.iconColor
++
++            MouseArea {
++                id: cellularHover
++                anchors.fill: parent
++                hoverEnabled: true
++                acceptedButtons: Qt.NoButton
++            }
++            PopupToolTip {
++                extraVisibleCondition: cellularHover.containsMouse
++                anchorEdges: (!Config.options.bar.bottom && !root.vertical) ? Edges.Bottom : Edges.Top
++                text: Translation.tr("Cellular") + " · " + Cellular.description
++            }
++        }
+         MaterialSymbol {
+             visible: BluetoothStatus.available
+             text: BluetoothStatus.connected ? "bluetooth_connected" : BluetoothStatus.enabled ? "bluetooth" : "bluetooth_disabled"
+@@ -145,4 +163,4 @@ Item {
+             source: "NotificationUnreadCount.qml"
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/services/Cellular.qml b/services/Cellular.qml
+new file mode 100644
+index 0000000..6222adf
+--- /dev/null
++++ b/services/Cellular.qml
+@@ -0,0 +1,98 @@
++pragma Singleton
++pragma ComponentBehavior: Bound
++
++import QtQuick
++import Quickshell
++import Quickshell.Io
++
++// Read ModemManager's cached status without changing the modem or connection.
++Singleton {
++    id: root
++
++    property var modem: null
++    readonly property bool present: modem !== null
++    readonly property string state: modem?.generic?.state ?? "unknown"
++    readonly property int strength: {
++        const value = Number(modem?.generic?.["signal-quality"]?.value ?? NaN);
++        return Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : -1;
++    }
++    readonly property bool registered: ["registered", "connecting", "connected", "disconnecting"].includes(state)
++    readonly property string materialSymbol: {
++        if (["disabled", "disabling", "failed", "locked"].includes(state))
++            return "signal_cellular_off";
++        if (!registered || strength < 0)
++            return "signal_cellular_nodata";
++        return strength > 75 ? "signal_cellular_4_bar"
++            : strength > 50 ? "signal_cellular_3_bar"
++            : strength > 25 ? "signal_cellular_2_bar"
++            : strength > 0 ? "signal_cellular_1_bar"
++            : "signal_cellular_0_bar";
++    }
++    readonly property string description: {
++        if (!present) return "";
++        const operator = modem["3gpp"]?.["operator-name"];
++        const technologies = modem.generic?.["access-technologies"] ?? [];
++        return [operator && operator !== "--" ? operator : modem.generic?.model,
++            technologies.filter(t => t !== "unknown" && t !== "--").join(" / ").toUpperCase(),
++            state, registered && strength >= 0 ? `${strength}%` : ""]
++            .filter(part => part).join(" · ");
++    }
++
++    property var pending: []
++    property var candidate: null
++
++    function parse(text) {
++        try { return JSON.parse(text); }
++        catch (error) { return {}; }
++    }
++
++    function rank(value) {
++        const state = value?.generic?.state;
++        return state === "connected" ? 3
++            : ["registered", "connecting", "disconnecting"].includes(state) ? 2 : 1;
++    }
++
++    function nextModem() {
++        if (pending.length > 0) {
++            modemProcess.exec(["mmcli", "--timeout=3", "--output-json", "--modem", pending.shift()]);
++        } else {
++            // Publish only after scanning all modems, avoiding flicker each refresh.
++            modem = candidate;
++        }
++    }
++
++    Timer {
++        interval: 10000
++        running: true
++        repeat: true
++        onTriggered: {
++            if (!listProcess.running && !modemProcess.running)
++                listProcess.running = true;
++        }
++    }
++
++    Process {
++        id: listProcess
++        running: true
++        command: ["mmcli", "--timeout=3", "--output-json", "--list-modems"]
++        stdout: StdioCollector { id: listOutput }
++        onExited: (exitCode, exitStatus) => {
++            const paths = exitCode === 0 ? root.parse(listOutput.text)["modem-list"] : [];
++            root.pending = Array.isArray(paths) ? paths.filter(path =>
++                typeof path === "string" && /^\/org\/freedesktop\/ModemManager1\/Modem\/\d+$/.test(path)) : [];
++            root.candidate = null;
++            root.nextModem();
++        }
++    }
++
++    Process {
++        id: modemProcess
++        stdout: StdioCollector { id: modemOutput }
++        onExited: (exitCode, exitStatus) => {
++            const value = exitCode === 0 ? root.parse(modemOutput.text).modem : null;
++            if (value?.generic && (!root.candidate || root.rank(value) > root.rank(root.candidate)))
++                root.candidate = value;
++            root.nextModem();
++        }
++    }
++}
